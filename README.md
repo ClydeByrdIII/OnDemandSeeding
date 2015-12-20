@@ -39,6 +39,9 @@ It will exit when:
 
 Exceptions being error handling like trackers being down, file not found, my inability to properly catch errors etc
 
+It stops the running EC2 instances and kills the BitTorrent client on the local embedded seeders on exit.
+So you only use them when you need them.
+
 Usage:
 
 ```shell
