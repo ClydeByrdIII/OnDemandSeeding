@@ -36,6 +36,7 @@ It will exit when:
 * Your seeder has no connected peers
 * The seeder to leecher ratio (slr) reaches or exceeds the given ratio without additional seeders
 * The slr was already sufficient
+* The max amount of seeding time was reached for the additional seeders. (You can change this)
 
 Exceptions being error handling like trackers being down, file not found, my inability to properly catch errors etc
 
