@@ -1,35 +1,62 @@
+# On-Demand BitTorrent Seeding
 For a project I created on-demand bittorrent seeders using local embedded systems and AWS EC2 instances.
 When a swarm for a torrent has more leechers than seeders, it's possible to have a slow or unreliable torrenting session.
-If you are the seeder and want to lighten the load on your seeder and temporarily generate a potentially faster, more reliable
-torrent session. This is not ideal for the average consumer, although if you stay within AWS EC2 free tier every one benefits.
+If you are the seeder and want to lighten the load on your machine and network, this may be of interest to you.
+You can temporarily generate a potentially faster, more reliable torrent session by adding EC2 instances from different geographical areas to remove location bottlenecks and have a larger upload capacity.
+This is not ideal for the average consumer, although if you stay within AWS EC2 free tier it could be useful.
+You could also look in to the Github student pack + Amazon educate to recieve over $115 in AWS credit
 
-This implementation uses Transmission as the bittorrent client, but an example with uTorrent was also implemented too.
-Each ec2 instance was setup to be copies of a single snapshot that all had deluge and deluge-web installed and ran on startup.
-They all had a copy of the same set of files. It's up to you to setup these instances to properly seed when running.
-I followed [this article](http://www.howtogeek.com/142044/how-to-turn-a-raspberry-pi-into-an-always-on-bittorrent-box/) to setup deluge on all my seeders including my local embedded systems (raspberry pi 2 and beaglebone black).
+## Implementation
+This implementation uses Transmission as the BitTorrent client, but an example with uTorrent was also implemented too.
+### BitTorrenting on EC2
+Each EC2 instance was setup to be copies of a single AMI that all had deluge and deluge-web installed and ran on startup.
+They each had a copy of the same set of files. It's up to you to setup these instances to properly seed when running.
 
-AWS credentials were stored in my ~/.aws/credential file
+I followed [this article](http://www.howtogeek.com/142044/how-to-turn-a-raspberry-pi-into-an-always-on-bittorrent-box/) to setup deluge on all my seeders including my local embedded systems (raspberry pi 2 and beaglebone black). 
 
-The project uses node.js and python. 
-It requires for Transmissions web portion to be enabled
+I followed [this article] (http://mwmanning.com/2010/11/29/EC2-Micro-Instance-as-a-Remote-Bittorrent-Client.html) for help setting up EC2 instances for BitTorrenting.
 
+The project uses node.js and python.
+It requires for Transmission's web server to be enabled.
+AWS credentials were stored in my [~/.aws/credential file]
+(https://blogs.aws.amazon.com/security/post/Tx3D6U6WSFGOK2H/A-New-and-Standardized-Way-to-Manage-Credentials-in-the-AWS-SDKs).
+
+## Usage
 The file "onDemandSeeding.js" does most of the work.
-
 It adds additional seeders to a given torrent file if it falls below a given ratio [0, 1].
+If less than 3 seeders are needed it will use local embedded systems, anything greater it starts ec2 instances (that are already created and stopped). You can remove this code if you want.
 
-for a 1 to 1  relationship with seeders and leechers try
-python onDemandSeeding.js filename.txt 1
+It will exit when:
+
+* Your seeder has no connected peers
+* The seeder to leecher ratio (slr) reaches or exceeds the given ratio without additional seeders
+* The slr was already sufficient
+
+Exceptions being error handling like trackers being down, file not found, my inability to properly catch errors etc
+
+usage:
+
+```shell
+node onDemandSeeding.js <filename (not the .torrent file)> <ratio [0, 1]> <optional num_seeders> <optional num_leechers>
+```
+
+For a 1 to 1 relationship with seeders and leechers try:
+
+```shell
+node onDemandSeeding.js filename.txt 1
+```
 
 For testing purposes you can also manually input the number of seeders and leechers in the swarm.
-let's say there are 3 seeders and 8 leechers
-node onDemandSeeding.js filename.txt 1 3 8
+This will at least work for one round of monitoring swarm statistics.
+If you want to say there are 3 seeders and 8 leechers and you want a 1 seeder per 2 leechers:
 
-so usage is
+```shell
+node onDemandSeeding.js filename.txt .5 3 8
+```
 
-python onDemandSeeding.js <filename> <ratio> <optional num_seeders> <optional num_leechers>
-
-The file "smallServer.py" is what your embedded systems run to start and kill bittorrent sessions when needed.
-
+The file "smallServer.py" is what your embedded systems would run to start and kill bittorrent sessions when needed.
+```shell
 python smallServer.py
+```
 
-*** Potentially not functional; after some style changes. I'd test them but I already got rid of the aws services, because I'm cheap *** 
+*** Potentially not functional; after some style changes. I'd test them, but I already got rid of the aws services, because I'm paranoid/cheap *** 
