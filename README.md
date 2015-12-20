@@ -10,6 +10,9 @@ I followed [this article](http://www.howtogeek.com/142044/how-to-turn-a-raspberr
 
 AWS credentials were stored in my ~/.aws/credential file
 
+The project uses node.js and python. 
+It requires for Transmissions web portion to be enabled
+
 The file "onDemandSeeding.js" does most of the work.
 
 It adds additional seeders to a given torrent file if it falls below a given ratio [0, 1].
@@ -19,7 +22,7 @@ python onDemandSeeding.js filename.txt 1
 
 For testing purposes you can also manually input the number of seeders and leechers in the swarm.
 let's say there are 3 seeders and 8 leechers
-python onDemandSeeding.js filename.txt 1 3 8
+node onDemandSeeding.js filename.txt 1 3 8
 
 so usage is
 
