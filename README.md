@@ -1,7 +1,7 @@
 # On-Demand BitTorrent Seeding
 For a project I created on-demand BitTorrent seeders using local embedded systems and AWS EC2 instances.
 When a swarm for a torrent has more leechers than seeders, it's possible to have a slow or unreliable torrenting session.
-If you are the seeder and want to lighten the load on your machine and network, this may be of interest to you.
+If you are the seeder and want to lighten the load on your machine and network, this maybe of interest to you.
 You can temporarily generate a potentially faster, more reliable torrent session by adding EC2 instances from different geographical areas to remove location bottlenecks and have a larger upload capacity.
 This is not ideal for the average consumer, although if you stay within AWS EC2 free tier it could be useful.
 You could also look in to the Github student pack + Amazon educate to receive over $115 in AWS credit
