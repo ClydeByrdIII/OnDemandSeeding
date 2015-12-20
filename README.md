@@ -1,10 +1,14 @@
 # On-Demand BitTorrent Seeding
-For a project I created on-demand bittorrent seeders using local embedded systems and AWS EC2 instances.
+For a project I created on-demand BitTorrent seeders using local embedded systems and AWS EC2 instances.
 When a swarm for a torrent has more leechers than seeders, it's possible to have a slow or unreliable torrenting session.
 If you are the seeder and want to lighten the load on your machine and network, this may be of interest to you.
 You can temporarily generate a potentially faster, more reliable torrent session by adding EC2 instances from different geographical areas to remove location bottlenecks and have a larger upload capacity.
 This is not ideal for the average consumer, although if you stay within AWS EC2 free tier it could be useful.
-You could also look in to the Github student pack + Amazon educate to recieve over $115 in AWS credit
+You could also look in to the Github student pack + Amazon educate to receive over $115 in AWS credit
+
+## Motivation for this project
+This was my term project for umich eecs 589 advanced networking class.
+I came up with it while trying to add virtualization to some aspect of "On-demand + X". Unfortunately the virtualization aspect of Docker containers didn't work out, but I'm not complaining about the results. I actually don't torrent things legally or illegally or know too much about torrenting beyond what I researched for this project.
 
 ## Implementation
 This implementation uses Transmission as the BitTorrent client, but an example with uTorrent was also implemented too.
@@ -34,7 +38,7 @@ It will exit when:
 
 Exceptions being error handling like trackers being down, file not found, my inability to properly catch errors etc
 
-usage:
+Usage:
 
 ```shell
 node onDemandSeeding.js <filename (not the .torrent file)> <ratio [0, 1]> <optional num_seeders> <optional num_leechers>
@@ -54,9 +58,9 @@ If you want to say there are 3 seeders and 8 leechers and you want a 1 seeder pe
 node onDemandSeeding.js filename.txt .5 3 8
 ```
 
-The file "smallServer.py" is what your embedded systems would run to start and kill bittorrent sessions when needed.
+The file "smallServer.py" is what your embedded systems would run to start and kill BitTorrent sessions when needed.
 ```shell
 python smallServer.py
 ```
 
-*** Potentially not functional; after some style changes. I'd test them, but I already got rid of the aws services, because I'm paranoid/cheap *** 
+*** Potentially not functional; after some style changes. I'd test them, but I already got rid of the AWS services, because I'm paranoid/cheap ***
