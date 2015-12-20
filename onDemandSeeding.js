@@ -30,7 +30,7 @@ var embeddedInstances = ['X.X.X.X', 'X.X.X.X'];
 // min file size
 var SIZE_MIN = 52428800;
 
-// max number of seeds available; is setset in instance population
+// max number of seeds available; is set in instance population
 
 var MAX_SEED = -1;
 
