@@ -16,7 +16,7 @@ This implementation uses Transmission as the BitTorrent client, but an example w
 Each EC2 instance was setup to be copies of a single AMI that all had deluge and deluge-web installed and ran on startup.
 They each had a copy of the same set of files. It's up to you to setup these instances to properly seed when running.
 Each EC2 instance was a [T2.micro instance](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/t2-instances.html). AWS has a default limit of 20 running T2.micro instances at one time, but you can request for a higher limit. I had them setup with 15 GB volumes.
-**You can use whatever type of instance you want though. I used T2.micro because it was free, but the code doesn't care.** I also use the east region for AWS, but you can change that or if you want to do multiple regions you'll have to modify the code to use multiple ec2 objects configured for the regions you want to use.
+**You can use whatever type of instance you want though, the code doesn't care. I used T2.micro because it was free.** I also use the east region for AWS, but you can change that or if you want to do multiple regions you'll have to modify the code to use multiple ec2 objects configured for the regions you want to use.
 
 I followed [this article](http://www.howtogeek.com/142044/how-to-turn-a-raspberry-pi-into-an-always-on-bittorrent-box/) to setup deluge on all my seeders including my local embedded systems (raspberry pi 2 and beaglebone black). 
 
