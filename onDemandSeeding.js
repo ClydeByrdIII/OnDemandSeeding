@@ -1,5 +1,7 @@
 var net = require('net');
-
+/* If you wanted to operate on multiple regions you
+ * would need to create multiple ec2 instances for each region
+ */
 var AWS = require("aws-sdk");
 AWS.config.update({region: "us-east-1"});
 var ec2 = new AWS.EC2({apiVersion: "latest"});
@@ -16,22 +18,22 @@ var transmission = new Transmission(
 
 /* setup constraints and global vars */
 
-// instances available
-var instanceIDs = [];
+// stores IDs of stopped instances
+var availableInstances = [];
 
-// instances currently running
+// stores IDs of running instances
 var runningInstances = [];
 
 // local embedded systems that can be seeders 
 // (Currently beaglebone black and raspberry pi 2)
 // add your own IP addresses to the array.
+// make array empty if using no embedded systems
 var embeddedInstances = ['X.X.X.X', 'X.X.X.X'];
 
 // min file size
 var SIZE_MIN = 52428800;
 
-// max number of seeds available; is set in instance population
-
+// max number of seeds available; is set on instance population
 var MAX_SEED = -1;
 
 // max time for instances to seed (in milliseconds) (arbitrary number)
@@ -45,7 +47,7 @@ var SEEDS    = undefined;
 var PEERS    = undefined;
 
 // tells if any instances are running currently
-var seeders_online = false;
+var seedersOnline = false;
 
 // used to store javascript timers, so they can be cleared
 // if max seeding time occurs
@@ -54,178 +56,174 @@ var timers = [];
 // just for formatting
 var bar = "----------------------"
 
-// function to bring seeders online
-function addSeeders(num_seeders, mon_args)
-{
-  if (num_seeders < 1)
-    return;
-
-  if (num_seeders < 3) {
-    // bring the embedded, local seeders online before trying ec2 instances
-    for (var i = 0; i < num_seeders; i++) {
-      runningInstances.push(embeddedInstances[i]);
-      // need to ensure each socket sends to each seeder
-      (function(i, client) {
-        
-        client.connect(5050, embeddedInstances[i],
-          function ()
-          {
-            client.write(JSON.stringify({'command': 'start'}));
-          }
-        );
-
-        // start polling after the last seeder is online
-        if (i + 1 == num_seeders) {
-          client.on('end', function()
-          {
-
-            seeders_online = true;
-            console.log("ODS: check again in %d seconds", POLL_TIME/1000);
-
-            // only seed for MAX TIME seconds
-            timers.push(setTimeout(
-              function()
-              {
-                console.log("MAX Seeding Time reached; Remove additonal seeders");
-                removeSeeders();
-              },
-              MAX_TIME));
-
-            // keep track of the polling timeout;
-            timers.push(setTimeout(monitor, POLL_TIME, mon_args[0], mon_args[1]));
-          });
-        }
-      })(i, new net.Socket());
-    }
-  } else {
-    // use ec2 instances for seeding
-    for (var i = 0; i < num_seeders; i++)
-      runningInstances.push(instanceIDs[i]);
-
-    ec2.startInstances({"InstanceIds": runningInstances}, 
-      function(err, data)
+/* helper functions */
+function instanceLogMaker(errorMsg, successMsg, instances) {
+  return function(err, data)
       {
         if (err) {
-          console.log("startInstances Error");
+          console.log(errorMsg);
           console.log(err, err.stack);
         } else {
-          console.log("Starting instances:");
+          console.log(successMsg);
           console.log(bar);
 
-          var instances = data.StartingInstances;
-          for (var i = 0; i < instances.length; i++)    
+          var instances = data[instances];
+          for (var i = 0; i < instances.length; i++)
             console.log(instances[i].InstanceId);
 
           console.log(bar);
         }
-      }
-    );
+      };
+}
 
-    // wait for them to come online
-    ec2.waitFor("instanceRunning", {"InstanceIds": runningInstances},
-      function(err, data)
-      {
-        if (err) { 
-          console.log("waitFor instanceRunning error");
-          console.log(err, err.stack);
-        } else {
-          console.log("Instances started:");
-          console.log(bar);
-
-          for (var item in data.Reservations) {    
-            var instances = data.Reservations[item].Instances;
-            for (var instance in instances)
-              console.log(instances[instance].InstanceId);
-          }
-
-          console.log(bar);
-          // instances are online; start polling
-          seeders_online = true;
-          // only seed for MAX TIME seconds
-          timers.push(setTimeout(
-            function()
+// function to bring seeders online
+function addSeeders(numSeeders, monitorArgs)
+{
+  if (numSeeders < 1)
+    return;
+  // if no embedded Instances skip this check
+  if (embeddedInstances.length == 0) {
+    if (numSeeders < (embeddedInstances.length + 1)) {
+      // bring the embedded, local seeders online before trying ec2 instances
+      for (var i = 0; i < numSeeders; i++) {
+        runningInstances.push(embeddedInstances[i]);
+        // need to ensure each socket sends to each seeder
+        (function(i, client) {
+          client.connect(5050, embeddedInstances[i],
+            function ()
             {
-              console.log("MAX Seeding Time reached; Remove additional seeders");
-              removeSeeders();
-            },
-            MAX_TIME));
-          
-          console.log("ODS: check again in %d seconds", POLL_TIME/1000);
-          timers.push(setTimeout(monitor, POLL_TIME, mon_args[0], mon_args[1]));
-        }
-    });
+              client.write(JSON.stringify({'command': 'start'}));
+            }
+          );
+
+          // start polling after the last seeder is online
+          if (i + 1 == numSeeders) {
+            client.on('end', function()
+            {
+
+              seedersOnline = true;
+              console.log("ODS: check again in %d seconds", POLL_TIME/1000);
+
+              // only seed for MAX TIME seconds
+              timers.push(setTimeout(
+                function()
+                {
+                  console.log("MAX Seeding Time reached; Remove additonal seeders");
+                  removeSeeders();
+                },
+                MAX_TIME));
+
+              // keep track of the polling timeout;
+              timers.push(setTimeout(monitor, POLL_TIME, monitorArgs[0], monitorArgs[1]));
+            });
+          }
+        })(i, new net.Socket());
+      }
+      return;
+    }
   }
+  // use ec2 instances for seeding
+  for (var i = 0; i < numSeeders; i++)
+    runningInstances.push(availableInstances[i]);
+
+  ec2.startInstances({"InstanceIds": runningInstances},
+    instanceLogMaker("startInstances Error",
+      "Starting instances:",
+      "StartingInstances"));
+
+  // wait for them to come online
+  ec2.waitFor("instanceRunning", {"InstanceIds": runningInstances},
+    function(err, data)
+    {
+      if (err) {
+        console.log("waitFor instanceRunning error");
+        console.log(err, err.stack);
+      } else {
+        console.log("Instances started:");
+        console.log(bar);
+
+        for (var item in data.Reservations) {
+          var instances = data.Reservations[item].Instances;
+          for (var instance in instances)
+            console.log(instances[instance].InstanceId);
+        }
+
+        console.log(bar);
+        // instances are online; start polling
+        seedersOnline = true;
+        // only seed for MAX TIME seconds
+        timers.push(setTimeout(
+          function()
+          {
+            console.log("MAX Seeding Time reached; Remove additional seeders");
+            removeSeeders();
+          },
+          MAX_TIME));
+
+        console.log("ODS: check again in %d seconds", POLL_TIME/1000);
+        timers.push(setTimeout(monitor, POLL_TIME, monitorArgs[0], monitorArgs[1]));
+      }
+  });
 }
 
 function removeSeeders()
 {
-  // don't get interuppted by other timeouts
+  // don't get interrupted by other timeouts
   for (var tid = 0; tid < timers.length; tid++)
     clearTimeout(timers[tid]);
 
   timers.length = 0;
-  if (runningInstances.length < 3) {
+  // if there are no embedded systems skip this check
+  if (embeddedInstances.length == 0) {
+    if (runningInstances.length < (embeddedInstances.length + 1)) {
 
-      for (var i = 0; i < runningInstances.length; i++) {
-        (function(i, client) 
-        {
-          client.connect(5050, runningInstances[i], 
-            function ()
-            {
-              client.write(JSON.stringify({'command': 'stop'}));
-            }
-          );
-
-          if (i + 1 == runningInstances.length) {
-            console.log("Stop")
-            client.on('end',
-              function()
-              { 
-                seeders_online = false;
-                runningInstances.length = 0;
-                // kill the program
-                console.log("Seeding finished");
-                process.exit();
+        for (var i = 0; i < runningInstances.length; i++) {
+          (function(i, client)
+          {
+            client.connect(5050, runningInstances[i],
+              function ()
+              {
+                client.write(JSON.stringify({'command': 'stop'}));
               }
             );
+
+            if (i + 1 == runningInstances.length) {
+              console.log("Stop")
+              client.on('end',
+                function()
+                {
+                  seedersOnline = false;
+                  runningInstances.length = 0;
+                  // kill the program
+                  console.log("Seeding finished");
+                  process.exit();
+                }
+              );
+            }
           }
+          )(i, new net.Socket());
         }
-        )(i, new net.Socket());
-      }
-      return;
+        return;
+    }
   }
 
   ec2.stopInstances({"InstanceIds": runningInstances},
-    function(err, data)
-    {
-      if (err) {
-        console.log("stopInstances Error");
-        console.log(err, err.stack);
-      } else {
-        console.log("Stopping Instances:");
-        console.log(bar);
-
-        var instances = data.StoppingInstances;
-        for (var i = 0; i <  instances.length; i++)    
-          console.log(instances[i].InstanceId);
-
-        console.log(bar);
-      }
-    }
-  );
+    instanceLogMaker("stopInstances Error",
+      "Stopping Instances:",
+      "StoppingInstances"));
 
    // wait for them to be offline
   ec2.waitFor("instanceStopped", {"InstanceIds": runningInstances}, 
     function(err, data)
     {
-      if (err) { 
+      if (err) {
         console.log("waitfor instanceStopped Error");
         console.log(err, err.stack); // an error occurred 
       } else {
         console.log("Instances stopped:");
         console.log(bar);
 
-        for (var item in data.Reservations) {    
+        for (var item in data.Reservations) {
           var instances = data.Reservations[item].Instances;
           for (var instance in instances)
             console.log(instances[instance].InstanceId);
@@ -233,7 +231,7 @@ function removeSeeders()
 
         console.log(bar);
 
-        seeders_online = false;
+        seedersOnline = false;
 
         /*  we're killing the program, 
             but I may have it do something else later 
@@ -246,28 +244,34 @@ function removeSeeders()
   );
 }
 
-function remove_seeders_if_necessary(torrent, ratio) 
+function isRatioBad(seeds, peers, ratio) {
+  if ((peers > 0) && (seeds/peers < ratio))
+    return true;
+  return false;
+}
+
+function removeSeedersIfNecessary(torrent, ratio)
 {
   var name      = torrent.name;
   var size      = Number(torrent.sizeWhenDone);
   var seeds     = Number(torrent.trackerStats[0].seederCount);
   var peers     = Number(torrent.trackerStats[0].leecherCount);
-  var peers_con = Number(torrent.peersConnected);
-  peers         = Math.max(peers, peers_con);
+  var peersCon  = Number(torrent.peersConnected);
+  peers         = Math.max(peers, peersCon);
 
   // if seed and peers were passed in use them
-  if(SEEDS != undefined)
+  if (SEEDS != undefined)
     seeds = Number(SEEDS);
 
-  if(PEERS != undefined)
+  if (PEERS != undefined)
     peers = Number(PEERS);
   // this means peers is definitly not zero
-  if(peers_con > 0)
+  if (peersCon > 0)
     console.log("File %s has a current s:l ratio of %d", name, seeds/peers);
 
   console.log("There are %d additional Seeders", runningInstances.length);
   
-  if(SEEDS != undefined) {
+  if (SEEDS != undefined) {
     console.log("There are %d reg seeders", seeds - runningInstances.length);
     seeds -= runningInstances.length;
   } else {
@@ -275,7 +279,7 @@ function remove_seeders_if_necessary(torrent, ratio)
   }
 
   // are there still any peers left?
-  if (peers_con < 1){
+  if (peersCon < 1) {
     console.log("No more peers for file %s; Remove additional seeders", name);
     removeSeeders();
   } else if (!(isRatioBad(seeds, peers, ratio))) {
@@ -287,30 +291,23 @@ function remove_seeders_if_necessary(torrent, ratio)
   }
 }
 
-function isRatioBad(seeds, peers, ratio) {
-  if ((peers > 0) && (seeds/peers < ratio)) 
-    return true;
-  return false;
-}
-
-function add_seeders_if_necessary(torrent, ratio) {
+function addSeedersIfNecessary(torrent, ratio) {
   var name      = torrent.name;
   var size      = Number(torrent.sizeWhenDone);
   var seeds     = Number(torrent.trackerStats[0].seederCount);
   var peers     = Number(torrent.trackerStats[0].leecherCount);
-  var peers_con = Number(torrent.peersConnected);
-  peers         = Math.max(peers, peers_con);
+  var peersCon  = Number(torrent.peersConnected);
+  peers         = Math.max(peers, peersCon);
 
   // if seed and peers were passed in use them
-  if(SEEDS != undefined)
+  if (SEEDS != undefined)
     seeds = Number(SEEDS);
 
-  if(PEERS != undefined) {
+  if (PEERS != undefined) {
     peers = Number(PEERS);
-    peers_con = 1;
+    peersCon = 1;
   }
 
-  // is file big enough?
   if (size < SIZE_MIN) {
     console.log("File %s needs to be at least %d bytes; It is %d bytes",
       name, SIZE_MIN, size);
@@ -318,27 +315,28 @@ function add_seeders_if_necessary(torrent, ratio) {
   }
 
   // Are more seeders necessary?
-  if ((peers_con > 0) && (isRatioBad(seeds, peers, ratio))) {
-    // the total number of seeds need for the given ratio
-    var tot_seeds = Math.ceil(peers * ratio);
-    var needed_seeds = tot_seeds - seeds;
+  if ((peersCon > 0) && (isRatioBad(seeds, peers, ratio))) {
+    // the total number of seeds needed for the given ratio
+    var totSeeds = Math.ceil(peers * ratio);
+    var neededSeeds = totSeeds - seeds;
 
     // at max start MAX_SEED number of seeds
-    var num_seeds = Math.min(needed_seeds, MAX_SEED);
+    var numSeeds = Math.min(neededSeeds, MAX_SEED);
 
-    console.log("current ratio %d Wanted ratio %d new ratio %d", seeds/peers, ratio, (num_seeds + seeds)/peers);
-    console.log("Needed %d seeds; Adding %d seeders", needed_seeds, num_seeds);
-    if(SEEDS != undefined)
-      SEEDS = num_seeds + seeds;
+    console.log("current ratio %d Wanted ratio %d new ratio %d", seeds/peers, ratio, (numSeeds + seeds)/peers);
+    console.log("Needed %d seeds; Adding %d seeders", neededSeeds, numSeeds);
+    if (SEEDS != undefined)
+      SEEDS = numSeeds + seeds;
 
-    addSeeders(num_seeds, [name, ratio]);
-  } else if (peers_con < 1) {
+    addSeeders(numSeeds, [name, ratio]);
+  } else if (peersCon < 1) {
     console.log("File %s no Peers connected; Not necessary to boost", name);
   } else {
     console.log("File %s has a decent s:l ratio of %d", name, seeds/peers);
   }
 }
 
+/* check if "filename"'s swarm ratio is sufficient */
 function monitor (filename, ratio)
 { 
   // remove the last timer in the array; it's expired
@@ -354,24 +352,24 @@ function monitor (filename, ratio)
 
       // search for torrent
       var torrents = torrents_list.torrents;
-      var tor_index = -1;
+      var torIndex = -1;
       for (var idx = 0; idx < torrents.length; idx++) {
         if (torrents[idx]['name'] === filename) {
-          tor_index = idx;
+          torIndex = idx;
           break;
         }
       }
 
-      if (tor_index < 0) {
+      if (torIndex < 0) {
         console.log("Couldn't find file %s", filename);
         return;
       }
     
       // search for seeders and leechers in swarm
-      var torrent = torrents_list.torrents[tor_index];
+      var torrent = torrents_list.torrents[torIndex];
       var i = 0;
-      for(; i < torrent.trackerStats.length; i++)
-        if(torrent.trackerStats[i].seederCount > -1)
+      for (; i < torrent.trackerStats.length; i++)
+        if (torrent.trackerStats[i].seederCount > -1)
           break;
 
       if (i == torrent.trackerStats.length) {
@@ -390,10 +388,10 @@ function monitor (filename, ratio)
         torrent.peersConnected
       );
       
-      if (seeders_online)
-        remove_seeders_if_necessary(torrent, ratio);
+      if (seedersOnline)
+        removeSeedersIfNecessary(torrent, ratio);
       else
-        add_seeders_if_necessary(torrent, ratio);
+        addSeedersIfNecessary(torrent, ratio);
     }
   );
 }
@@ -403,7 +401,7 @@ function main()
   var args = process.argv.slice(2);
 
   if (args.length < 2) {
-    console.log("Usage: node torrent.js <filename> <ratio of seeder to leecher in decimal form> <optional: num_seeds> <optional: num_peers>");
+    console.log("Usage: node torrent.js <filename> <ratio of seeder to leecher in decimal form> <optional: numSeeds> <optional: num_peers>");
     console.log("Example: node torrent.js test.iso .30");
     return;
   }
@@ -421,7 +419,7 @@ function main()
   monitor(filename, ratio);
 }
 
-// populate instanceId array with available (stopped) instances then call main
+// populate available instance array with available (stopped) instances then call main
 ec2.describeInstances(
   {
     'Filters': 
@@ -434,17 +432,17 @@ ec2.describeInstances(
   },
   function(error, data) 
   {
-    if(error) {
+    if (error) {
       console.log("Error populating instances");
       console.log(error);
     } else {
-      for( var item in data.Reservations) {    
+      for (var item in data.Reservations) {
         var instances = data.Reservations[item].Instances;
         for ( var instance in instances)
-          instanceIDs.push(instances[instance].InstanceId);
+          availableInstances.push(instances[instance].InstanceId);
       }
 
-      MAX_SEED = instanceIDs.length;
+      MAX_SEED = availableInstances.length;
       main();
     }   
   }
